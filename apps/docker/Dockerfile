@@ -43,7 +43,7 @@ WORKDIR /azerothcore
 # This target can be useful to inspect the explicit outputs from the build,
 FROM skeleton AS build
 
-ARG CTOOLS_BUILD="all"
+ARG CTOOLS_BUILD="none"
 ARG CTYPE="RelWithDebInfo"
 ARG CCACHE_CPP2="true"
 ARG CSCRIPTPCH="OFF"
@@ -52,10 +52,16 @@ ARG CMODULES="static"
 ARG CSCRIPTS_DEFAULT_LINKAGE="static"
 ARG CWITH_WARNINGS="ON"
 ARG CMAKE_EXTRA_OPTIONS=""
+# Empty means "use all cores + 1", which is what upstream did unconditionally.
+# Set it on memory-constrained hosts: AzerothCore translation units are large,
+# and -j6 OOM-killed a build at object 449/1813 on an 18GB machine even with
+# the worldserver stopped and the LLM model unloaded. -j4 completed reliably
+# there. Override with --build-arg CBUILD_JOBS=N.
+ARG CBUILD_JOBS=""
 ARG GIT_DISCOVERY_ACROSS_FILESYSTEM=1
 
 ARG CCACHE_DIR="/ccache"
-ARG CCACHE_MAXSIZE="1000MB"
+ARG CCACHE_MAXSIZE="3GB"
 ARG CCACHE_SLOPPINESS="pch_defines,time_macros,include_file_mtime"
 ARG CCACHE_COMPRESS=""
 ARG CCACHE_COMPRESSLEVEL="9"
@@ -68,6 +74,7 @@ RUN apt-get update                                                     \
         git lsb-base curl unzip default-mysql-client openssl                  \
         default-libmysqlclient-dev libboost-all-dev libssl-dev libmysql++-dev \
         libreadline-dev zlib1g-dev libbz2-dev libncurses5-dev liblzma-dev  \
+        libcurl4-openssl-dev nlohmann-json3-dev                            \
     && rm -rf /var/lib/apt/lists/*
 
 COPY CMakeLists.txt /azerothcore/CMakeLists.txt
@@ -102,8 +109,9 @@ RUN --mount=type=cache,target=/ccache,sharing=locked \
        -DCMAKE_CXX_COMPILER_LAUNCHER="ccache"          \
        -DCMAKE_C_COMPILER_LAUNCHER="ccache"            \
        -DBoost_USE_STATIC_LIBS="ON"                    \
-    && cmake --build . --config "$CTYPE" -j $(($(nproc) + 1)) \
-    && cmake --install . --config "$CTYPE"
+    && cmake --build . --config "$CTYPE" -j ${CBUILD_JOBS:-$(($(nproc) + 1))} \
+    && cmake --install . --config "$CTYPE" \
+    && echo "=== ccache stats ===" && ccache -s
 
 #############################
 # Base runtime for services #
@@ -121,6 +129,7 @@ ENV ACORE_COMPONENT=undefined
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
       libmysqlclient21 libreadline8 libicu74 libncurses5-dev \
+      libcurl4 \
       gettext-base default-mysql-client \
       adduser \
     && rm -rf /var/lib/apt/lists/*
