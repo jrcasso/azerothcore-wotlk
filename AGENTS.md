@@ -23,6 +23,7 @@ Read the matching doc(s) BEFORE starting the task:
   - SmartAI work (`smart_scripts` data) → also `.agents/docs/cpp-scripts.md`
 - Reviewing a changeset or PR → `.agents/docs/code-review.md`
 - Self-reviewing, or opening or updating a PR → also `.agents/docs/self-review-rules.md`
+- Running, scaling or debugging playerbots (bot counts, login ramp, DB pool threading) → `.agents/docs/systems/playerbots-scaling.md`
 - Touching a subsystem that has a doc in `.agents/docs/systems/` → read that doc too
 - Writing, debugging, or changing live-stack e2e (`e2e/`) → `e2e/README.md`, `.agents/docs/e2e-policy.md`, and AzerothGhost `e2e/LLM_GUIDE.md` (scratch work → `e2e/local/`)
 - Capturing a lesson or adding/updating agent docs → `.agents/docs/README.md`

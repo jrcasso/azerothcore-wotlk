@@ -20,7 +20,10 @@ services:
   # Never use `restart` on worldserver -- use `stop` (which honours this) then
   # `start`. Killing mysqld mid-write likewise risks table corruption.
   ac-worldserver:
-    stop_grace_period: 300s
+    # 300s was not enough: a stop with ~240 bots online and CharacterDatabase
+    # .WorkerThreads=1 hit the timeout and was SIGKILLed (exit 137) mid-flush.
+    # The flush is bounded by how fast the character DB drains, so give it room.
+    stop_grace_period: 900s
     build:
       args:
         CTOOLS_BUILD: db-only
@@ -41,6 +44,13 @@ services:
       args:
         CTOOLS_BUILD: db-only
 
+  # READ-COMMITTED, not MySQL's REPEATABLE-READ default: character saves do
+  # `DELETE FROM character_aura WHERE guid = ?`, a primary-key RANGE delete
+  # (the PK leads with guid). Under REPEATABLE-READ that takes gap locks, so two
+  # bots saving auras concurrently deadlock -- which is exactly what happened
+  # when CharacterDatabase.WorkerThreads went above 1. READ-COMMITTED does not
+  # gap-lock, so per-character delete+insert is safe to run concurrently.
+  #
   # MySQL ships with a 128MB buffer pool; these databases total 563MB, so the
   # working set cannot be cached and every bot login goes to disk.  4G holds all
   # of it with room to grow.  flush-log-at-trx-commit=2 trades "lose <=1s of
@@ -49,6 +59,7 @@ services:
   ac-database:
     stop_grace_period: 120s
     command: >
+      --transaction-isolation=READ-COMMITTED
       --innodb-buffer-pool-size=4G
       --innodb-buffer-pool-instances=4
       --innodb-flush-log-at-trx-commit=2
