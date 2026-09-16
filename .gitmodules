@@ -1,0 +1,12 @@
+[submodule "modules/mod-ollama-bot-buddy"]
+	path = modules/mod-ollama-bot-buddy
+	url = git@github.com:jrcasso/mod-ollama-bot-buddy.git
+	branch = main
+[submodule "modules/mod-ollama-chat"]
+	path = modules/mod-ollama-chat
+	url = git@github.com:jrcasso/mod-ollama-chat.git
+	branch = main
+[submodule "modules/mod-playerbots"]
+	path = modules/mod-playerbots
+	url = git@github.com:jrcasso/mod-playerbots.git
+	branch = master

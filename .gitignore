@@ -10,6 +10,13 @@
 !/modules/*.sh
 !/modules/CMakeLists.txt
 !/modules/*.h
+
+# The modules this rig is built from, tracked as submodules so one
+# --recurse-submodules clone brings the whole thing at pinned revisions.
+# Upstream ignores all of /modules/*; these three are re-included by name.
+!/modules/mod-ollama-bot-buddy
+!/modules/mod-ollama-chat
+!/modules/mod-playerbots
 !/modules/*.cmake
 /build*/
 /var/*
