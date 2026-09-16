@@ -1,0 +1,8 @@
+services:
+  # The runtime image copies only built binaries from the build stage, so
+  # /azerothcore/modules is empty at runtime. mod-playerbots reads its SQL from
+  # there to populate acore_playerbots on first boot; without it the worldserver
+  # logs "Directory ... not exist" and segfaults (exit 139).
+  ac-worldserver:
+    volumes:
+      - ./modules:/azerothcore/modules:ro
