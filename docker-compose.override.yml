@@ -3,6 +3,92 @@ services:
   # /azerothcore/modules is empty at runtime. mod-playerbots reads its SQL from
   # there to populate acore_playerbots on first boot; without it the worldserver
   # logs "Directory ... not exist" and segfaults (exit 139).
+  #
+  # dbimport lives in src/tools/, not src/server/apps/, and the Dockerfile's
+  # build stage defaults to ARG CTOOLS_BUILD="none" -- so CMake never configures
+  # it and the db-import stage's `COPY --from=build .../bin/dbimport` fails with
+  # "not found". Nothing in docker-compose.yml or .env wires this arg up.
+  #
+  # authserver, worldserver and db-import all derive from the `runtime` stage,
+  # which COPYs from `build`. The arg must be IDENTICAL on all three or each
+  # gets its own build-stage cache key and compiles AzerothCore from scratch.
+  # client-data is FROM skeleton and doesn't need it.
+  #
+  # stop_grace_period: docker's default is 10s, then SIGKILL. AzerothCore needs
+  # far longer to flush player state to the characters DB, so a plain
+  # `docker compose restart` kills it mid-save and players lose progress.
+  # Never use `restart` on worldserver -- use `stop` (which honours this) then
+  # `start`. Killing mysqld mid-write likewise risks table corruption.
   ac-worldserver:
+    stop_grace_period: 300s
+    build:
+      args:
+        CTOOLS_BUILD: db-only
     volumes:
       - ./modules:/azerothcore/modules:ro
+    depends_on:
+      ac-ollama:
+        condition: service_healthy
+
+  ac-authserver:
+    stop_grace_period: 60s
+    build:
+      args:
+        CTOOLS_BUILD: db-only
+
+  ac-db-import:
+    build:
+      args:
+        CTOOLS_BUILD: db-only
+
+  # MySQL ships with a 128MB buffer pool; these databases total 563MB, so the
+  # working set cannot be cached and every bot login goes to disk.  4G holds all
+  # of it with room to grow.  flush-log-at-trx-commit=2 trades "lose <=1s of
+  # writes if the HOST crashes" for much less fsync pressure -- a fair trade for
+  # a game server, and unrelated to clean container stops.
+  ac-database:
+    stop_grace_period: 120s
+    command: >
+      --innodb-buffer-pool-size=4G
+      --innodb-buffer-pool-instances=4
+      --innodb-flush-log-at-trx-commit=2
+      --innodb-redo-log-capacity=512M
+
+  # LLM backend for mod-ollama-chat and mod-ollama-bot-buddy.
+  #
+  # CPU-only on purpose: this rig's GPU is a Radeon RX 480 (Polaris/gfx803,
+  # 4GB). ROCm dropped Polaris, ROCm-on-WSL only covers RDNA3+, and 4GB can't
+  # hold a 7B q4 model anyway. Inference runs on the 5900X (12c/24t) instead.
+  # Vulkan was tested too: WSL's /dev/dri is a paravirtual dxgkrnl node with no
+  # amdgpu driver behind it, so RADV finds no device. Confirmed, not assumed.
+  #
+  # Reachable from the other containers as http://ac-ollama:11434 and from the
+  # WSL host as http://localhost:11434 (for `ollama pull`, curl, etc).
+  ac-ollama:
+    container_name: ac-ollama
+    stop_grace_period: 60s
+    image: ollama/ollama:latest
+    networks:
+      - ac-network
+    ports:
+      - ${DOCKER_OLLAMA_EXTERNAL_PORT:-11434}:11434
+    environment:
+      # Never evict the model: a cold reload costs ~20s of CPU on every bot line.
+      OLLAMA_KEEP_ALIVE: "-1"
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      # Bots fan out a lot of short prompts; a little batching helps, but CPU
+      # inference degrades fast past this.
+      OLLAMA_NUM_PARALLEL: "4"
+      OLLAMA_HOST: "0.0.0.0:11434"
+    volumes:
+      - ac-ollama-models:/root/.ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+volumes:
+  ac-ollama-models:
