@@ -31,3 +31,28 @@ Tests (Google Test, in `src/test/`): configure `-DBUILD_TESTING=ON`, then `ctest
   Verify with `docker inspect -f '{{.State.ExitCode}}'` — 0 is clean, 137 is SIGKILL.
 - **Module config lives on a bind mount** (`env/dist/etc`), so config edits need only a restart,
   not a rebuild. Module *code* under `modules/` is compiled into worldserver and does need one.
+
+### After a Windows or WSL restart
+
+The stack does **not** come back on its own, and two separate things are broken:
+
+1. **Docker is stopped.** There is no systemd in this distro, so nothing restarts the
+   daemon. Run `.agents/plans/wsl-docker-ollama-rig/start-docker.sh`, which also works
+   around `/etc/init.d/docker` line 62 (`ulimit -Hn 524288` fails with EINVAL when the
+   calling shell's *soft* limit is already higher, aborting before `dockerd` launches).
+2. **The realm is flagged offline.** An ungraceful shutdown leaves
+   `acore_auth.realmlist.flag = 3` (`REALM_FLAG_VERSION_MISMATCH | REALM_FLAG_OFFLINE`).
+   The realm-list query excludes flagged realms, so authserver finds none, logs
+   *"no realm address could be resolved"* and **exits 0** — a clean exit that restart-loops
+   under `restart: unless-stopped` and looks nothing like a failure. Fix:
+
+   ```sql
+   UPDATE acore_auth.realmlist SET flag = 0 WHERE id = 1;
+   ```
+
+   AzerothCore prints this remedy itself, a few lines above the error most greps land on —
+   read the whole block, not the last line.
+
+Also check `netsh interface portproxy show v4tov4` against the current WSL IP
+(`ip -4 addr show eth0`): the IP usually changes across a restart, and the forwarding rules
+still point at the old one. It does not always change, so verify rather than assume.
