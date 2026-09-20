@@ -86,10 +86,16 @@ services:
     environment:
       # Never evict the model: a cold reload costs ~20s of CPU on every bot line.
       OLLAMA_KEEP_ALIVE: "-1"
-      OLLAMA_MAX_LOADED_MODELS: "1"
-      # Bots fan out a lot of short prompts; a little batching helps, but CPU
-      # inference degrades fast past this.
-      OLLAMA_NUM_PARALLEL: "4"
+      # Two models resident: 7b for chat (personality matters) and 3b for
+      # bot-buddy decisions (structured commands, where 3b holds up). At 1 they
+      # would evict each other on every alternating request, ~20s per reload.
+      # 5.9GB + 2.5GB against ~15GB free.
+      OLLAMA_MAX_LOADED_MODELS: "2"
+      # 2, not 4: prompt evaluation is compute-bound and it is ~95% of a
+      # decision's cost (53.8s of 56.7s at 2019 tokens). Four concurrent
+      # requests each get a quarter of the cores, so halving concurrency
+      # roughly halves per-request latency at similar throughput.
+      OLLAMA_NUM_PARALLEL: "2"
       OLLAMA_HOST: "0.0.0.0:11434"
     volumes:
       - ac-ollama-models:/root/.ollama
